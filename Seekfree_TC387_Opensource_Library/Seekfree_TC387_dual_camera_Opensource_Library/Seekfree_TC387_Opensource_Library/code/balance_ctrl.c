@@ -65,16 +65,16 @@ void balance_ctrl_update(void) {
   }
 
   // ================================================================
-  //  1. 安全检测：倾角超过 ±35° (0.61 rad) 停机 (暂时注释用于调试)
+  //  1. 安全检测：倾角超过 ±35° (0.61 rad) 停机
   // ================================================================
   float pitch = g_imu.pitch_rad - BALANCE_ANGLE_OFFSET;
-  // if (pitch > 0.61f || pitch < -0.61f) {
-  //   motor_ctrl_stop();
-  //   g_balance.enabled = 0;
-  //   g_balance.pwm_left = 0;
-  //   g_balance.pwm_right = 0;
-  //   return;
-  // }
+  if (pitch > 0.61f || pitch < -0.61f) {
+    motor_ctrl_stop();
+    g_balance.enabled = 0;
+    g_balance.pwm_left = 0;
+    g_balance.pwm_right = 0;
+    return;
+  }
 
   // ================================================================
   //  2. LQR 平衡控制
@@ -113,9 +113,9 @@ void balance_ctrl_update(void) {
   float pwm_l_f = (u_balance + u_turn) * LQR_OUTPUT_SCALE;
   float pwm_r_f = (u_balance - u_turn) * LQR_OUTPUT_SCALE;
 
-  // 转换为整数并限幅
+  // 转换为整数并限幅 (注意右侧电机反向)
   g_balance.pwm_left = (int32)pwm_l_f;
-  g_balance.pwm_right = (int32)pwm_r_f;
+  g_balance.pwm_right = -(int32)pwm_r_f;
 
   // ---- 设置电机 ----
   motor_ctrl_set_pwm(g_balance.pwm_left, g_balance.pwm_right);
