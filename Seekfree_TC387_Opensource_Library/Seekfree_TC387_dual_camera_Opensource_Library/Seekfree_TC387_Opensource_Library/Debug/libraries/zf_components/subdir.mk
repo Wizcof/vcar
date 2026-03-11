@@ -1,0 +1,47 @@
+################################################################################
+# 自动生成的文件。不要编辑！
+################################################################################
+
+# 将这些工具调用的输入和输出添加到构建变量 
+C_SRCS += \
+"../libraries/zf_components/printf_redirect.c" \
+"../libraries/zf_components/seekfree_assistant.c" \
+"../libraries/zf_components/seekfree_assistant_interface.c" 
+
+COMPILED_SRCS += \
+"libraries/zf_components/printf_redirect.src" \
+"libraries/zf_components/seekfree_assistant.src" \
+"libraries/zf_components/seekfree_assistant_interface.src" 
+
+C_DEPS += \
+"./libraries/zf_components/printf_redirect.d" \
+"./libraries/zf_components/seekfree_assistant.d" \
+"./libraries/zf_components/seekfree_assistant_interface.d" 
+
+OBJS += \
+"libraries/zf_components/printf_redirect.o" \
+"libraries/zf_components/seekfree_assistant.o" \
+"libraries/zf_components/seekfree_assistant_interface.o" 
+
+
+# 每个子目录必须为构建它所贡献的源提供规则
+"libraries/zf_components/printf_redirect.src":"../libraries/zf_components/printf_redirect.c" "libraries/zf_components/subdir.mk"
+	cctc -cs --dep-file="$*.d" --misrac-version=2004 "-fC:/Users/Wiz/Desktop/ZF/TC387_Library/Seekfree_TC387_Opensource_Library/Seekfree_TC387_dual_camera_Opensource_Library/Seekfree_TC387_Opensource_Library/Debug/TASKING_C_C___Compiler-Include_paths__-I_.opt" --iso=99 --c++14 --language=+volatile --exceptions --anachronisms --fp-model=3 -O0 --tradeoff=4 --compact-max-size=200 -g -Wc-w544 -Wc-w557 -Ctc38x -Y0 -N0 -Z0 -o "$@" "$<"
+"libraries/zf_components/printf_redirect.o":"libraries/zf_components/printf_redirect.src" "libraries/zf_components/subdir.mk"
+	astc -Og -Os --no-warnings= --error-limit=42 -o  "$@" "$<"
+"libraries/zf_components/seekfree_assistant.src":"../libraries/zf_components/seekfree_assistant.c" "libraries/zf_components/subdir.mk"
+	cctc -cs --dep-file="$*.d" --misrac-version=2004 "-fC:/Users/Wiz/Desktop/ZF/TC387_Library/Seekfree_TC387_Opensource_Library/Seekfree_TC387_dual_camera_Opensource_Library/Seekfree_TC387_Opensource_Library/Debug/TASKING_C_C___Compiler-Include_paths__-I_.opt" --iso=99 --c++14 --language=+volatile --exceptions --anachronisms --fp-model=3 -O0 --tradeoff=4 --compact-max-size=200 -g -Wc-w544 -Wc-w557 -Ctc38x -Y0 -N0 -Z0 -o "$@" "$<"
+"libraries/zf_components/seekfree_assistant.o":"libraries/zf_components/seekfree_assistant.src" "libraries/zf_components/subdir.mk"
+	astc -Og -Os --no-warnings= --error-limit=42 -o  "$@" "$<"
+"libraries/zf_components/seekfree_assistant_interface.src":"../libraries/zf_components/seekfree_assistant_interface.c" "libraries/zf_components/subdir.mk"
+	cctc -cs --dep-file="$*.d" --misrac-version=2004 "-fC:/Users/Wiz/Desktop/ZF/TC387_Library/Seekfree_TC387_Opensource_Library/Seekfree_TC387_dual_camera_Opensource_Library/Seekfree_TC387_Opensource_Library/Debug/TASKING_C_C___Compiler-Include_paths__-I_.opt" --iso=99 --c++14 --language=+volatile --exceptions --anachronisms --fp-model=3 -O0 --tradeoff=4 --compact-max-size=200 -g -Wc-w544 -Wc-w557 -Ctc38x -Y0 -N0 -Z0 -o "$@" "$<"
+"libraries/zf_components/seekfree_assistant_interface.o":"libraries/zf_components/seekfree_assistant_interface.src" "libraries/zf_components/subdir.mk"
+	astc -Og -Os --no-warnings= --error-limit=42 -o  "$@" "$<"
+
+clean: clean-libraries-2f-zf_components
+
+clean-libraries-2f-zf_components:
+	-$(RM) ./libraries/zf_components/printf_redirect.d ./libraries/zf_components/printf_redirect.o ./libraries/zf_components/printf_redirect.src ./libraries/zf_components/seekfree_assistant.d ./libraries/zf_components/seekfree_assistant.o ./libraries/zf_components/seekfree_assistant.src ./libraries/zf_components/seekfree_assistant_interface.d ./libraries/zf_components/seekfree_assistant_interface.o ./libraries/zf_components/seekfree_assistant_interface.src
+
+.PHONY: clean-libraries-2f-zf_components
+
