@@ -127,16 +127,24 @@ debug_cmd_t debug_uart_poll_cmd(void) {
           if (cmd != CMD_NONE) {
             switch (cmd) {
             case CMD_SET_K1:
-              g_balance.k1 = val;
+              // K1 对应 Pitch (俯仰角) 权重，即状态变量 x[2]
+              g_balance.K[0][2] = -val; 
+              g_balance.K[1][2] = -val;
               break;
             case CMD_SET_K2:
-              g_balance.k2 = val;
+              // K2 对应 Pitch Rate (俯仰角速度) 权重，即状态变量 x[3]
+              g_balance.K[0][3] = -val;
+              g_balance.K[1][3] = -val;
               break;
             case CMD_SET_K3:
-              g_balance.k3 = val;
+              // K3 对应 位移 权重，即状态变量 x[0]
+              g_balance.K[0][0] = -val;
+              g_balance.K[1][0] = -val;
               break;
             case CMD_SET_K4:
-              g_balance.k4 = val;
+              // K4 对应 速度 权重，即状态变量 x[1]
+              g_balance.K[0][1] = -val;
+              g_balance.K[1][1] = -val;
               break;
             default:
               break;

@@ -1,63 +1,37 @@
 /*********************************************************************************************************************
  * @file        imu_task.h
- * @brief       IMU 数据采集与卡尔曼滤波姿态解算
+ * @brief       IMU 数据采集与 EKF 卡尔曼滤波姿态解算
  ********************************************************************************************************************/
 #ifndef _IMU_TASK_H_
 #define _IMU_TASK_H_
 
 #include "robot_config.h"
 
-// ============================================================================
-//  卡尔曼滤波器结构体
-// ============================================================================
-typedef struct {
-  float angle;       // 滤波后角度 (rad)
-  float gyro_bias;   // 陀螺仪零偏估计 (rad/s)
-  float P[2][2];     // 误差协方差矩阵
-  float Q_angle;     // 角度过程噪声
-  float Q_gyro_bias; // 陀螺仪偏移过程噪声
-  float R_measure;   // 测量噪声
-} kalman_filter_t;
+//#define CONTROL_PERIOD_S 0.005f  // 5ms 控制周期
 
-// ============================================================================
-//  IMU 数据结构体
-// ============================================================================
 typedef struct {
-  // 原始数据 (来自库全局变量)
+  // 原始数据
   int16 gyro_x, gyro_y, gyro_z;
   int16 acc_x, acc_y, acc_z;
+  int16 mag_x, mag_y, mag_z; // 新增磁力计数据
 
   // 物理量
-  float gyro_x_dps, gyro_y_dps, gyro_z_dps; // °/s
-  float acc_x_g, acc_y_g, acc_z_g;          // g
+  float gyro_x_rads, gyro_y_rads, gyro_z_rads; // rad/s
+  float acc_x_g, acc_y_g, acc_z_g;             // g
+  float mag_x_f, mag_y_f, mag_z_f;             // 校准后磁场强度
 
-  // 姿态解算结果
-  float pitch_rad;        // 俯仰角 (rad)，用于平衡控制
-  float pitch_gyro_rad_s; // 俯仰角速度 (rad/s)
-  float yaw_gyro_rad_s;   // 偏航角速度 (rad/s)，用于转向控制
+  // 姿态解算结果 (rad)
+  float pitch_rad;        
+  float roll_rad;
+  float yaw_rad;
 
-  // 卡尔曼滤波器实例
-  kalman_filter_t kf_pitch;
+  float pitch_gyro_rad_s; 
+  float yaw_gyro_rad_s;   
 } imu_data_t;
 
-// ============================================================================
-//  全局 IMU 数据实例 (extern)
-// ============================================================================
 extern imu_data_t g_imu;
 
-// ============================================================================
-//  公开函数
-// ============================================================================
-/**
- * @brief   初始化 IMU 传感器与卡尔曼滤波器
- * @return  0=成功
- */
 uint8 imu_task_init(void);
-
-/**
- * @brief   在定时器中断中调用，读取 IMU 数据并进行卡尔曼滤波
- * @note    调用频率应与 CONTROL_PERIOD_S 一致
- */
 void imu_task_update(void);
 
 #endif // _IMU_TASK_H_

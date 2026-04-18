@@ -108,7 +108,7 @@ void Robot_Control_Loop(void)
     //     每 4 次控制周期发一次 = 20ms = 50Hz
     //     格式: "describe: data1, data2, ..., dataN\n"
     // ================================================================
-    if (loop_counter % 4 == 0)
+   /* if (loop_counter % 4 == 0)
     {
 #if (!DEBUG_MODE_IMU_ONLY)
         // 完整控制模式: 8 通道
@@ -131,4 +131,5 @@ void Robot_Control_Loop(void)
             g_imu.acc_z_g);
 #endif
     }
+*/
 }

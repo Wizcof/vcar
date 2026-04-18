@@ -69,7 +69,7 @@ void motor_ctrl_init(void) {
 // ============================================================================
 //  编码器更新 (在 PIT 中断中调用)
 // ============================================================================
-void motor_ctrl_update_encoder(void) {
+/*void motor_ctrl_update_encoder(void) {
 #if MOTOR_USE_BRUSHLESS_UART
   // ---- 1. 无刷电机：读取串口接收到的转速数据 ----
   // 直接采用中断中拼装的 recv_speed_left / right 数据
@@ -86,7 +86,21 @@ void motor_ctrl_update_encoder(void) {
   // 无刷驱动中，正负与机器朝向可能需要调整，这里与有刷一致直接相乘
   g_motor.speed_left_mps = (float)g_motor.enc_left_raw * factor;
   g_motor.speed_right_mps = (float)g_motor.enc_right_raw * factor;
+*/
+  void motor_ctrl_update_encoder(void) {
+#if MOTOR_USE_BRUSHLESS_UART
+  // 【关键修改】：每次进入 5ms 编码器更新环，主动向驱动器发送速度请求
+  // 这样 5ms 后的下一次中断到来前，串口接收中断就能把最新的速度解析好
+  motor_driver_get_speed(); 
 
+  // ---- 读取串口接收到的转速数据 ----
+  g_motor.enc_left_raw = g_motor.recv_speed_left;
+  g_motor.enc_right_raw = g_motor.recv_speed_right;
+  
+  float factor = WHEEL_PERIMETER_M / ((float)ENCODER_PPR * CONTROL_PERIOD_S);
+  
+  g_motor.speed_left_mps = (float)g_motor.enc_left_raw * factor;
+  g_motor.speed_right_mps = (float)g_motor.enc_right_raw * factor;
 #else
   // ---- 2. 有刷电机：读取差分脉冲并清零 ----
   g_motor.enc_left_raw = encoder_get_count(ENCODER_L);
@@ -113,13 +127,15 @@ void motor_ctrl_update_encoder(void) {
 //  设置电机 PWM (带死区补偿与限幅)
 //  正值前进，负值后退
 // ============================================================================
-void motor_ctrl_set_pwm(int32 pwm_left, int32 pwm_right) {
-  // ---- 增加死区补偿 ----
-  if (pwm_left > 0) pwm_left += MOTOR_PWM_DEAD;
-  else if (pwm_left < 0) pwm_left -= MOTOR_PWM_DEAD;
-  
-  if (pwm_right > 0) pwm_right += MOTOR_PWM_DEAD;
-  else if (pwm_right < 0) pwm_right -= MOTOR_PWM_DEAD;
+  void motor_ctrl_set_pwm(int32 pwm_left, int32 pwm_right) {
+    pwm_left = (int32)((float)pwm_left * 1.00);
+    pwm_right = (int32)((float)pwm_right * 1.5);
+    // ---- 增加死区补偿 ----
+    if (pwm_left > 0) pwm_left += MOTOR_L_PWM_DEAD;
+    else if (pwm_left < 0) pwm_left -= MOTOR_L_PWM_DEAD;
+
+    if (pwm_right > 0) pwm_right += MOTOR_R_PWM_DEAD;
+    else if (pwm_right < 0) pwm_right -= MOTOR_R_PWM_DEAD;
 
   // ---- 限幅 ----
   pwm_left = clamp_i32(pwm_left, -MOTOR_PWM_MAX, MOTOR_PWM_MAX);
@@ -129,10 +145,10 @@ void motor_ctrl_set_pwm(int32 pwm_left, int32 pwm_right) {
   // ---- 1. 无刷电机串口发送占空比 ----
   g_motor.send_data_buffer[0] = 0xA5;         // 帧头
   g_motor.send_data_buffer[1] = 0X01;         // 功能字
-  g_motor.send_data_buffer[2] = (uint8)(((uint16)pwm_left & 0xFF00) >> 8); // 左占空比高八位
-  g_motor.send_data_buffer[3] = (uint8)((uint16)pwm_left & 0x00FF);        // 左占空比低八位
-  g_motor.send_data_buffer[4] = (uint8)(((uint16)pwm_right & 0xFF00) >> 8);// 右占空比高八位
-  g_motor.send_data_buffer[5] = (uint8)((uint16)pwm_right & 0x00FF);       // 右占空比低八位
+  g_motor.send_data_buffer[2] = (uint8)(((uint16)pwm_right & 0xFF00) >> 8); // 填入右轮占空比
+  g_motor.send_data_buffer[3] = (uint8)((uint16)pwm_right & 0x00FF);        // 填入右轮占空比
+  g_motor.send_data_buffer[4] = (uint8)(((uint16)pwm_left & 0xFF00) >> 8);  // 填入左轮占空比
+  g_motor.send_data_buffer[5] = (uint8)((uint16)pwm_left & 0x00FF);         // 填入左轮占空比
   g_motor.send_data_buffer[6] = 0;            // 校验清零
   for(int i = 0; i < 6; i ++) {
       g_motor.send_data_buffer[6] += g_motor.send_data_buffer[i]; // 计算校验位
@@ -198,8 +214,8 @@ void motor_uart_callback(void) {
             }
             if(g_motor.sum_check_data == g_motor.receive_data_buffer[6]) { // 校验位正确
                 if(g_motor.receive_data_buffer[1] == 0x02) { // 检查指令：速度响应
-                    g_motor.recv_speed_left  = (int16)(((uint16)g_motor.receive_data_buffer[2] << 8) | g_motor.receive_data_buffer[3]);
-                    g_motor.recv_speed_right = (int16)(((uint16)g_motor.receive_data_buffer[4] << 8) | g_motor.receive_data_buffer[5]);
+                    g_motor.recv_speed_right = (int16)(((uint16)g_motor.receive_data_buffer[2] << 8) | g_motor.receive_data_buffer[3]);
+                    g_motor.recv_speed_left  = (int16)(((uint16)g_motor.receive_data_buffer[4] << 8) | g_motor.receive_data_buffer[5]);
                 }
             }
         }

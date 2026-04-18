@@ -1,160 +1,121 @@
 /*********************************************************************************************************************
  * @file        balance_ctrl.c
- * @brief       LQR 平衡控制 + PD 转向控制 —— 实现文件
+ * @brief       全状态反馈 LQR 矩阵控制 —— 实现文件
  ********************************************************************************************************************/
 #include "balance_ctrl.h"
 #include "imu_task.h"
 #include "motor_ctrl.h"
 
-// ============================================================================
-//  全局控制器实例
-// ============================================================================
 balance_ctrl_t g_balance;
 
-// ============================================================================
-//  内部辅助：浮点限幅
-// ============================================================================
 static float clamp_f(float val, float min_val, float max_val) {
-  if (val > max_val)
-    return max_val;
-  if (val < min_val)
-    return min_val;
+  if (val > max_val) return max_val;
+  if (val < min_val) return min_val;
   return val;
 }
 
-// ============================================================================
-//  初始化
-// ============================================================================
-void balance_ctrl_init(void) {
-  // ---- LQR 默认增益 ----
-  g_balance.k1 = LQR_K1_DEFAULT;
-  g_balance.k2 = LQR_K2_DEFAULT;
-  g_balance.k3 = LQR_K3_DEFAULT;
-  g_balance.k4 = LQR_K4_DEFAULT;
+// 载入示例工程中的 K 矩阵
+// 载入 MATLAB/Python 仿真计算得出的 LQR K 矩阵
+static void load_k_matrix(void) {
+    // ====================================================================
+    // 左轮推力控制量 (对应 u[0])
+    // ====================================================================
+    g_balance.K[0][0] = -0.022361f;   // x[0]: 位移增益
+    g_balance.K[0][1] = -2.766893f;   // x[1]: 速度增益
+    g_balance.K[0][2] = -13.737548f;  // x[2]: 俯仰角增益 (抵抗倾倒核心)
+    g_balance.K[0][3] = -0.523119f;   // x[3]: 俯仰角速度增益 (阻尼项)
+    g_balance.K[0][4] =  0.223607f;   // x[4]: 偏航角增益
+    g_balance.K[0][5] =  0.032340f;   // x[5]: 偏航角速度增益
 
-  // ---- 转向 PD 默认参数 ----
-  g_balance.turn_kp = TURN_KP_DEFAULT;
-  g_balance.turn_kd = TURN_KD_DEFAULT;
-
-  // ---- 目标初始化 ----
-  g_balance.target_speed = 0.0f;
-  g_balance.target_yaw_rate = 0.0f;
-
-  // ---- 内部状态 ----
-  g_balance.x_estimate = 0.0f;
-  g_balance.pwm_left = 0;
-  g_balance.pwm_right = 0;
-  g_balance.enabled = 0; // 默认禁用，待传感器稳定后使能
+    // ====================================================================
+    // 右轮推力控制量 (对应 u[1])
+    // ====================================================================
+    g_balance.K[1][0] = -0.022361f;   // x[0]: 位移增益
+    g_balance.K[1][1] = -2.766893f;   // x[1]: 速度增益
+    g_balance.K[1][2] = -13.737548f;  // x[2]: 俯仰角增益 (抵抗倾倒核心)
+    g_balance.K[1][3] = -0.523119f;   // x[3]: 俯仰角速度增益 (阻尼项)
+    
+    // 注意：偏航控制对于左右轮是对称相反的，这样才能产生差速转向力矩
+    g_balance.K[1][4] = -0.223607f;   // x[4]: 偏航角增益 
+    g_balance.K[1][5] = -0.032340f;   // x[5]: 偏航角速度增益
 }
 
-// ============================================================================
-//  控制器更新 (在 PIT 中断中调用)
-//
-//  控制流程:
-//    1. 倾角安全检测 (倾角过大则停机保护)
-//    2. LQR 平衡控制: u_balance = -(k1*θ + k2*dθ + k3*x + k4*dx)
-//    3. PD 转向控制:  u_turn = kp*(ω_ref - ω) + kd*(0 - dω/dt) [简化为 P 控制]
-//    4. 叠加输出并设置电机
-// ============================================================================
+void balance_ctrl_init(void) {
+  load_k_matrix();
+
+  g_balance.target_speed = 0.0f;
+  g_balance.target_pitch = 0.0f;
+  g_balance.target_yaw = 0.0f;
+
+  g_balance.displacement_estimate = 0.0f;
+  g_balance.yaw_estimate = 0.0f;
+  g_balance.yaw_last_error = 0.0f;
+  g_balance.enabled = 1; 
+}
+
 void balance_ctrl_update(void) {
   if (!g_balance.enabled) {
     motor_ctrl_stop();
-    g_balance.pwm_left = 0;
-    g_balance.pwm_right = 0;
     return;
   }
 
-  // ================================================================
-  //  1. 安全检测：倾角超过 ±35° (0.61 rad) 停机
-  // ================================================================
-  float pitch = g_imu.pitch_rad - BALANCE_ANGLE_OFFSET;
+  // 1. 安全检测
+  float pitch = g_imu.pitch_rad;
   if (pitch > 0.61f || pitch < -0.61f) {
     motor_ctrl_stop();
     g_balance.enabled = 0;
-    g_balance.pwm_left = 0;
-    g_balance.pwm_right = 0;
     return;
   }
 
-  // ================================================================
-  //  2. LQR 平衡控制
-  // ================================================================
-  // 状态量
-  float theta = pitch;                   // 倾角 (rad)
-  float dtheta = g_imu.pitch_gyro_rad_s; // 角速度 (rad/s)
-  float dx = g_motor.speed_avg_mps;      // 线速度 (m/s)
+  // 2. 状态变量更新 (对应参考代码 LQR_Variable)
+  float speed_err = g_motor.speed_avg_mps - g_balance.target_speed;
+  speed_err = clamp_f(speed_err, -0.2f, 0.2f); // 限幅保护
 
-  // 位移状态: 用速度误差积分作为位移项
-  // 当目标速度为 0 时，x 累积; 当有目标速度时，x 跟踪目标位移
-  float speed_err = dx - g_balance.target_speed;
-  g_balance.x_estimate += speed_err * CONTROL_PERIOD_S;
+  g_balance.displacement_estimate += speed_err * CONTROL_PERIOD_S;
+  g_balance.yaw_estimate += g_imu.yaw_gyro_rad_s * CONTROL_PERIOD_S;
 
-  // 位移积分限幅，防止长时间漂移导致积分饱和
-  g_balance.x_estimate = clamp_f(g_balance.x_estimate, -0.5f, 0.5f);
+  // 组装状态向量 x
+  g_balance.x[0] = g_balance.displacement_estimate;         // Displacement_Error
+  g_balance.x[1] = speed_err;                               // Speed_Error
+  g_balance.x[2] = pitch - g_balance.target_pitch;          // Pitch_Error
+  g_balance.x[3] = g_imu.pitch_gyro_rad_s;                  // Pitch_Rate_Error
+  
+  float current_yaw_err = g_balance.yaw_estimate - g_balance.target_yaw;
+  g_balance.x[4] = current_yaw_err;                         // Yaw_Error
+  g_balance.x[5] = (current_yaw_err - g_balance.yaw_last_error) / CONTROL_PERIOD_S; // Yaw_Rate_Error
+  
+  g_balance.yaw_last_error = current_yaw_err;
 
-  float x = g_balance.x_estimate;
+  // 3. 矩阵相乘计算控制律: u = -K * x
+  for (int i = 0; i < 2; i++) {
+      g_balance.u[i] = 0;
+      for (int j = 0; j < 6; j++) {
+          g_balance.u[i] += g_balance.K[i][j] * g_balance.x[j];
+      }
+      g_balance.u[i] = -g_balance.u[i];
+  }
 
-  // LQR 反馈控制律: u = -(k1*θ + k2*dθ + k3*x + k4*dx_err)
-  float u_balance = -(g_balance.k1 * theta + g_balance.k2 * dtheta +
-                      g_balance.k3 * x + g_balance.k4 * speed_err);
+  // 4. 输出到电机
+  // u[0] 对应左轮扭矩，u[1] 对应右轮扭矩
+  float pwm_l_f = g_balance.u[0] * LQR_OUTPUT_SCALE;
+  float pwm_r_f = g_balance.u[1] * LQR_OUTPUT_SCALE;
 
-  // ================================================================
-  //  3. PD 转向控制
-  // ================================================================
-  float yaw_err = g_balance.target_yaw_rate - g_imu.yaw_gyro_rad_s;
-  float u_turn = g_balance.turn_kp * yaw_err;
-  // 注: kd 项可在后续加入角加速度反馈
-
-  // ================================================================
-  //  4. 叠加与放大输出
-  // ================================================================
-  // 此时算出的 u_balance 一般在 100~200，但无刷电机 PWM 幅度可达 10000 且在 1000 以内可能不转
-  // 所以需要通过 LQR_OUTPUT_SCALE 统一放大以便实际驱动
-  float pwm_l_f = (u_balance + u_turn) * LQR_OUTPUT_SCALE;
-  float pwm_r_f = (u_balance - u_turn) * LQR_OUTPUT_SCALE;
-
-  // 转换为整数并限幅 (注意右侧电机反向)
-  g_balance.pwm_left = (int32)pwm_l_f;
+  g_balance.pwm_left = -(int32)pwm_l_f;
   g_balance.pwm_right = -(int32)pwm_r_f;
 
-  // ---- 设置电机 ----
   motor_ctrl_set_pwm(g_balance.pwm_left, g_balance.pwm_right);
 }
 
-// ============================================================================
-//  设置遥控目标
-// ============================================================================
-void balance_ctrl_set_target(float speed_mps, float yaw_rate_rads) {
-  g_balance.target_speed = speed_mps;
-  g_balance.target_yaw_rate = yaw_rate_rads;
-}
-
-// ============================================================================
-//  使能控制
-// ============================================================================
 void balance_ctrl_enable(uint8 en) {
   if (en && !g_balance.enabled) {
-    // 使能时重置位移积分
-    g_balance.x_estimate = 0.0f;
+    g_balance.displacement_estimate = 0.0f;
+    g_balance.yaw_estimate = 0.0f;
     motor_ctrl_reset_distance();
   }
   g_balance.enabled = en;
 }
 
-// ============================================================================
-//  运行时修改 LQR 增益
-// ============================================================================
-void balance_ctrl_set_lqr_gains(float k1, float k2, float k3, float k4) {
-  g_balance.k1 = k1;
-  g_balance.k2 = k2;
-  g_balance.k3 = k3;
-  g_balance.k4 = k4;
-}
-
-// ============================================================================
-//  运行时修改转向 PD 增益
-// ============================================================================
-void balance_ctrl_set_turn_gains(float kp, float kd) {
-  g_balance.turn_kp = kp;
-  g_balance.turn_kd = kd;
+void balance_ctrl_set_target(float speed_mps, float yaw_rads) {
+  g_balance.target_speed = speed_mps;
+  g_balance.target_yaw = yaw_rads;
 }
